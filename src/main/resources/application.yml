@@ -1,0 +1,2 @@
+forest: # http-client配置，后端默认框架是okhttp3
+  log-response-content: true # 打开/关闭Forest响应内容日志（默认为 false）
