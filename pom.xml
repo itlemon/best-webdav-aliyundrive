@@ -17,7 +17,6 @@
         <java.version>11</java.version>
         <hutool.version>5.7.22</hutool.version>
         <guava.version>31.1-jre</guava.version>
-        <forest.version>1.5.19</forest.version>
         <webdav-servlet.version>2.0.1</webdav-servlet.version>
     </properties>
     <dependencies>
@@ -78,9 +77,8 @@
 
         <!-- http client -->
         <dependency>
-            <groupId>com.dtflys.forest</groupId>
-            <artifactId>forest-spring-boot-starter</artifactId>
-            <version>${forest.version}</version>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
         </dependency>
 
         <!-- jackson -->
@@ -113,6 +111,18 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                        </exclude>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
             </plugin>
         </plugins>
     </build>

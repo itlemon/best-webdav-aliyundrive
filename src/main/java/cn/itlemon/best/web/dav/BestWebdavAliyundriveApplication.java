@@ -2,6 +2,9 @@ package cn.itlemon.best.web.dav;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+
+import cn.itlemon.best.web.dav.aliyun.config.AliyunDriveConfig;
 
 /**
  * 阿里云网盘WEB-DAV服务启动类
@@ -10,6 +13,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Created on 2022-03-20
  */
 @SpringBootApplication
+@EnableConfigurationProperties(AliyunDriveConfig.class)
 public class BestWebdavAliyundriveApplication {
 
     public static void main(String[] args) {

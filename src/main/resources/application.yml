@@ -1,2 +1,9 @@
 forest: # http-client配置，后端默认框架是okhttp3
   log-response-content: true # 打开/关闭Forest响应内容日志（默认为 false）
+
+aliyundrive:
+  base:
+    auth:
+      enabled: true
+      username: admin # 连接web-dav时候需要用到的用户名
+      password: admin # 连接web-dav时候需要用到的密码
