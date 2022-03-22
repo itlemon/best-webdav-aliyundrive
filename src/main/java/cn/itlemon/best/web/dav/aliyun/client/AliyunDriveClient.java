@@ -4,7 +4,6 @@ import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import lombok.extern.slf4j.Slf4j;
@@ -20,8 +19,11 @@ import okhttp3.Response;
 @Component
 public class AliyunDriveClient {
 
-    @Autowired
-    private AliyunDriveApiClient client;
+    private final AliyunDriveApiClient client;
+
+    public AliyunDriveClient(AliyunDriveApiClient client) {
+        this.client = client;
+    }
 
     public String getDriveId() {
         return client.getDriveId();

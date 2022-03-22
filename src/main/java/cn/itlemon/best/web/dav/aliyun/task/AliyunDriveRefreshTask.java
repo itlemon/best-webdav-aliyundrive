@@ -1,6 +1,5 @@
 package cn.itlemon.best.web.dav.aliyun.task;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -16,8 +15,11 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 public class AliyunDriveRefreshTask {
 
-    @Autowired
-    private AliyunDriveClient aliyunDriveClient;
+    private final AliyunDriveClient aliyunDriveClient;
+
+    public AliyunDriveRefreshTask(AliyunDriveClient aliyunDriveClient) {
+        this.aliyunDriveClient = aliyunDriveClient;
+    }
 
     /**
      * 每次间隔5min中请求一次，用来主动更新token

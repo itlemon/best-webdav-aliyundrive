@@ -15,7 +15,6 @@ import javax.annotation.Nullable;
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.google.common.base.Preconditions;
@@ -50,12 +49,11 @@ class AliyunDriveApiClient {
 
     private static final RateLimiter LOG_RATE_LIMITER = RateLimiter.create(1);
 
-    @Autowired
-    private AliyunDriveConfig aliyunDriveConfig;
+    private final AliyunDriveConfig aliyunDriveConfig;
 
     private final OkHttpClient httpClient;
 
-    public AliyunDriveApiClient() {
+    public AliyunDriveApiClient(AliyunDriveConfig aliyunDriveConfig) {
         // 构建一个okHttpClient
         this.httpClient = new Builder()
                 // 新增一个拦截器，设置请求头等信息
@@ -121,6 +119,7 @@ class AliyunDriveApiClient {
                 .writeTimeout(1, TimeUnit.MINUTES)
                 .connectTimeout(1, TimeUnit.MINUTES)
                 .build();
+        this.aliyunDriveConfig = aliyunDriveConfig;
     }
 
     @PostConstruct
