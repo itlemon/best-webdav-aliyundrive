@@ -71,6 +71,23 @@ public interface AliyunDriveConstant {
     String IF_RANGE_HEADER_NAME = "if-range";
 
     /**
+     * content-length
+     */
+    String CONTENT_LENGTH_HEADER_NAME = "content-length";
+
+    /**
+     * X-Expected-Entity-Length
+     */
+    String X_EXPECTED_ENTITY_LENGTH_HEADER_NAME = "X-Expected-Entity-Length";
+
+    /**
+     * Expect
+     */
+    String EXPECT_HEADER_NAME = "Expect";
+
+    String EXPECT_HEADER_VALUE = "100-continue";
+
+    /**
      * 部分错误信息
      */
     String PART_OF_API_ERROR_MESSAGE = "AccessToken";
