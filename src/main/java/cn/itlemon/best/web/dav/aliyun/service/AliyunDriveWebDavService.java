@@ -1,28 +1,38 @@
 package cn.itlemon.best.web.dav.aliyun.service;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import javax.annotation.Nonnull;
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
 
+import org.apache.tomcat.util.http.fileupload.IOUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
-import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import cn.itlemon.best.web.dav.aliyun.client.AliyunDriveClient;
+import cn.itlemon.best.web.dav.aliyun.constant.AliyunDriveConstant;
 import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFile;
+import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFileListResult;
 import cn.itlemon.best.web.dav.aliyun.model.request.FileListRequest;
 import cn.itlemon.best.web.dav.aliyun.store.AliyunDriveWebDavStore;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.webdav.exceptions.WebdavException;
+import okhttp3.HttpUrl;
 import okhttp3.Response;
 
 /**
@@ -51,7 +61,7 @@ public class AliyunDriveWebDavService {
     /**
      * 缓存
      */
-    private static final Cache<String, Set<AliyunDriveFile>> ALIYUN_DRIVE_FILE_CACHE = CacheBuilder.newBuilder()
+    private final LoadingCache<String, Set<AliyunDriveFile>> ALIYUN_DRIVE_FILE_CACHE = CacheBuilder.newBuilder()
             .initialCapacity(128)
             .maximumSize(1024)
             .expireAfterWrite(60, TimeUnit.SECONDS)
@@ -59,7 +69,13 @@ public class AliyunDriveWebDavService {
             .removalListener((RemovalListener<String, Set<AliyunDriveFile>>) notification -> log.info(
                     "AliyunDriveWebDavService remove cache, cacheId: {}, AliyunDriveFile: {}",
                     notification.getKey(), notification.getValue()))
-            .build();
+            .build(new CacheLoader<>() {
+                @Override
+                public Set<AliyunDriveFile> load(@Nonnull String fileId) {
+                    // 获取真实的文件列表
+                    return getChildrenFilesFromAliyunDrive(fileId);
+                }
+            });
 
     public AliyunDriveWebDavService(AliyunDriveClient aliyunDriveClient,
             AliyunDriveFileVirtualService aliyunDriveFileVirtualService) {
@@ -104,7 +120,101 @@ public class AliyunDriveWebDavService {
     }
 
     public void uploadPre(String resourceUri, long contentLength, InputStream content) {
+        resourceUri = checkResourceUri(resourceUri);
+        PathInfo pathInfo = getPathInfo(resourceUri);
+        TFile parent = getTFileByPath(pathInfo.getParentPath());
+        if (parent == null) {
+            return;
+        }
+        // 如果已存在，先删除
+        TFile tfile = getTFileByPath(resourceUri);
+        if (tfile != null) {
+            if (tfile.getSize() == size) {
+                //如果文件大小一样，则不再上传
+                return;
+            }
+            remove(path);
+        }
 
+
+        int chunkCount = (int) Math.ceil(((double) size) / chunkSize); // 进1法
+
+        UploadPreRequest uploadPreRequest = new UploadPreRequest();
+        //        uploadPreRequest.setContent_hash(UUID.randomUUID().toString());
+        uploadPreRequest.setDrive_id(client.getDriveId());
+        uploadPreRequest.setName(pathInfo.getName());
+        uploadPreRequest.setParent_file_id(parent.getFile_id());
+        uploadPreRequest.setSize(size);
+        List<UploadPreRequest.PartInfo> part_info_list = new ArrayList<>();
+        for (int i = 0; i < chunkCount; i++) {
+            UploadPreRequest.PartInfo partInfo = new UploadPreRequest.PartInfo();
+            partInfo.setPart_number(i + 1);
+            part_info_list.add(partInfo);
+        }
+        uploadPreRequest.setPart_info_list(part_info_list);
+
+        LOGGER.info("开始上传文件，文件名：{}，总大小：{}, 文件块数量：{}", resourceUri, size, chunkCount);
+
+        String json = client.post("/file/create_with_proof", uploadPreRequest);
+        UploadPreResult uploadPreResult = JsonUtil.readValue(json, UploadPreResult.class);
+        List<UploadPreRequest.PartInfo> partInfoList = uploadPreResult.getPart_info_list();
+        if (partInfoList != null) {
+            if (size > 0) {
+                virtualTFileService.createTFile(parent.getFile_id(), uploadPreResult);
+            }
+            LOGGER.info("文件预处理成功，开始上传。文件名：{}，上传URL数量：{}", resourceUri, partInfoList.size());
+
+            byte[] buffer = new byte[chunkSize];
+            for (int i = 0; i < partInfoList.size(); i++) {
+                UploadPreRequest.PartInfo partInfo = partInfoList.get(i);
+
+                long expires = Long.parseLong(
+                        Objects.requireNonNull(Objects.requireNonNull(HttpUrl.parse(partInfo.getUpload_url()))
+                                .queryParameter("x-oss-expires")));
+                if (System.currentTimeMillis() / 1000 + 10 >= expires) {
+                    // 已过期，重新置换UploadUrl
+                    RefreshUploadUrlRequest refreshUploadUrlRequest = new RefreshUploadUrlRequest();
+                    refreshUploadUrlRequest.setDrive_id(client.getDriveId());
+                    refreshUploadUrlRequest.setUpload_id(uploadPreResult.getUpload_id());
+                    refreshUploadUrlRequest.setFile_id(uploadPreResult.getFile_id());
+                    refreshUploadUrlRequest.setPart_info_list(part_info_list);
+                    String refreshJson = client.post("/file/get_upload_url", refreshUploadUrlRequest);
+                    UploadPreResult refreshResult = JsonUtil.readValue(refreshJson, UploadPreResult.class);
+                    for (int j = i; j < partInfoList.size(); j++) {
+                        UploadPreRequest.PartInfo oldInfo = partInfoList.get(j);
+                        UploadPreRequest.PartInfo newInfo = refreshResult.getPart_info_list().stream()
+                                .filter(p -> p.getPart_number().equals(oldInfo.getPart_number())).findAny()
+                                .orElseThrow(NullPointerException::new);
+                        oldInfo.setUpload_url(newInfo.getUpload_url());
+                    }
+                }
+
+                try {
+                    int read = IOUtils.read(inputStream, buffer, 0, buffer.length);
+                    if (read == -1) {
+                        LOGGER.info("文件上传结束。文件名：{}，当前进度：{}/{}", resourceUri, (i + 1), partInfoList.size());
+                        return;
+                    }
+                    client.upload(partInfo.getUpload_url(), buffer, 0, read);
+                    virtualTFileService.updateLength(parent.getFile_id(), uploadPreResult.getFile_id(), buffer.length);
+                    LOGGER.info("文件正在上传。文件名：{}，当前进度：{}/{}", path, (i + 1), partInfoList.size());
+                } catch (IOException e) {
+                    virtualTFileService.remove(parent.getFile_id(), uploadPreResult.getFile_id());
+                    throw new WebdavException(e);
+                }
+            }
+        }
+
+
+        UploadFinalRequest uploadFinalRequest = new UploadFinalRequest();
+        uploadFinalRequest.setFile_id(uploadPreResult.getFile_id());
+        uploadFinalRequest.setDrive_id(client.getDriveId());
+        uploadFinalRequest.setUpload_id(uploadPreResult.getUpload_id());
+
+        client.post("/file/complete", uploadFinalRequest);
+        virtualTFileService.remove(parent.getFile_id(), uploadPreResult.getFile_id());
+        LOGGER.info("文件上传成功。文件名：{}", path);
+        clearCache();
     }
 
     /**
@@ -124,10 +234,8 @@ public class AliyunDriveWebDavService {
      * @return 子文件列表
      */
     public Set<AliyunDriveFile> getChildrenFiles(String fileId) {
-        Set<AliyunDriveFile> aliyunDriveFiles = ALIYUN_DRIVE_FILE_CACHE.get(fileId, key -> {
-            // 获取真实的文件列表
-            return getChildrenFilesFromAliyunDrive(fileId);
-        });
+        // 这里使用getUnchecked方法，因为返回的结果一定可以通过检测，所以这里无需检测
+        Set<AliyunDriveFile> aliyunDriveFiles = ALIYUN_DRIVE_FILE_CACHE.getUnchecked(fileId);
         Set<AliyunDriveFile> result = new LinkedHashSet<>(aliyunDriveFiles);
         // 获取上传中的文件列表（这里是虚拟出来的）
         List<AliyunDriveFile> virtualAliyunDriveFiles = aliyunDriveFileVirtualService.list(fileId);
@@ -158,22 +266,24 @@ public class AliyunDriveWebDavService {
      */
     private List<AliyunDriveFile> getFileListFromAliyunDrive(String fileId, String marker,
             List<AliyunDriveFile> aliyunDriveFileResult) {
-        FileListRequest requestParam = new FileListRequest();
-        listQuery.setMarker(marker);
-        listQuery.setLimit(100);
-        listQuery.setOrder_by("updated_at");
-        listQuery.setOrder_direction("DESC");
-        listQuery.setDrive_id(client.getDriveId());
-        listQuery.setParent_file_id(nodeId);
-        String json = client.post("/file/list", requestParam);
-        TFileListResult<TFile> tFileListResult = JsonUtil.readValue(json, new TypeReference<TFileListResult<TFile>>() {
-        });
-        all.addAll(tFileListResult.getItems());
-        if (!StringUtils.hasLength(tFileListResult.getNext_marker())) {
-            return all;
+        try {
+            FileListRequest requestParam = new FileListRequest();
+            requestParam.setDriveId(aliyunDriveClient.getDriveId());
+            requestParam.setParentFileId(fileId);
+            requestParam.setMarker(marker);
+            String result = aliyunDriveClient.post(AliyunDriveConstant.ALIYUN_DRIVE_FILE_LIST_API, requestParam);
+            AliyunDriveFileListResult fileListResult = JSONUtil.toBean(result, AliyunDriveFileListResult.class);
+            aliyunDriveFileResult.addAll(fileListResult.getItems());
+            if (StrUtil.isBlank(fileListResult.getNextMarker())) {
+                return aliyunDriveFileResult;
+            }
+            // 递归获取
+            return getFileListFromAliyunDrive(fileId, fileListResult.getNextMarker(), aliyunDriveFileResult);
+        } catch (Exception e) {
+            // 这里需要catch异常，当因为网络加载失败的话，这样可以返回部分数据或者空列表，不至于返回错误
+            log.error("AliyunDriveWebDavService.getFileListFromAliyunDrive fail.", e);
+            return aliyunDriveFileResult;
         }
-        // 递归获取
-        return getFileListFromAliyunDrive(nodeId, tFileListResult.getNext_marker(), all);
     }
 
     /**
@@ -183,5 +293,19 @@ public class AliyunDriveWebDavService {
      */
     public void remove(String uri) {
 
+    }
+
+    /**
+     * 检查资源的uri是否正确，且纠正为正确的uri
+     *
+     * @param resourceUri uri
+     * @return uri
+     */
+    private String checkResourceUri(String resourceUri) {
+        resourceUri = resourceUri.replaceAll("//", "/");
+        if (resourceUri.endsWith("/")) {
+            resourceUri = resourceUri.substring(0, resourceUri.length() - 1);
+        }
+        return resourceUri;
     }
 }

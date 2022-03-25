@@ -24,6 +24,11 @@ public interface AliyunDriveConstant {
     String ALIYUN_DRIVE_MAIN_URL = "https://www.aliyundrive.com/";
 
     /**
+     * 阿里云网盘文件列表API
+     */
+    String ALIYUN_DRIVE_FILE_LIST_API = "https://api.aliyundrive.com/adrive/v3/file/list";
+
+    /**
      * 默认的工作目录
      */
     String ALIYUN_DRIVE_WORK_DIR = "/etc/aliyun-drive/";

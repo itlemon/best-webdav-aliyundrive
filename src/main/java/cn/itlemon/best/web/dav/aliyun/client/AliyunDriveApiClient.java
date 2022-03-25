@@ -224,6 +224,7 @@ class AliyunDriveApiClient {
             }
             return toString(response.body());
         } catch (Exception e) {
+            log.error(e.getMessage());
             throw new WebdavException(e);
         }
     }
