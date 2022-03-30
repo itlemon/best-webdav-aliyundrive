@@ -23,13 +23,17 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import cn.itlemon.best.web.dav.aliyun.client.AliyunDriveClient;
 import cn.itlemon.best.web.dav.aliyun.constant.AliyunDriveConstant;
+import cn.itlemon.best.web.dav.aliyun.constant.FileType;
 import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFile;
 import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFileListResult;
 import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFilePartInfo;
 import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveResourceInfo;
+import cn.itlemon.best.web.dav.aliyun.model.request.FileCreateRequest;
+import cn.itlemon.best.web.dav.aliyun.model.request.FileDownloadRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.FileListRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.RefreshUploadUrlRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.UploadFinishRequest;
@@ -101,7 +105,32 @@ public class AliyunDriveWebDavService {
      * @param folderUri 文件夹uri
      */
     public void createFolder(String folderUri) {
+        folderUri = checkResourceUri(folderUri);
+        AliyunDriveResourceInfo resourceInfo = getResourceInfo(folderUri);
+        AliyunDriveFile parent = getAliyunDriveFile(resourceInfo.getParentPath());
+        if (parent == null) {
+            log.error("create folder fail, parent folder: {} is not exist.", resourceInfo.getParentPath());
+            return;
+        }
 
+        FileCreateRequest fileCreateRequest = new FileCreateRequest();
+        fileCreateRequest.setDriveId(aliyunDriveClient.getDriveId());
+        fileCreateRequest.setName(resourceInfo.getName());
+        fileCreateRequest.setParentFileId(parent.getFileId());
+        fileCreateRequest.setType(FileType.FOLDER.getType());
+        String createFolderResponse =
+                aliyunDriveClient.post("https://api.aliyundrive.com/adrive/v2/file/createWithFolders",
+                        fileCreateRequest);
+        AliyunDriveFile createdFolder = JSONUtil.toBean(createFolderResponse, AliyunDriveFile.class);
+
+        // 清理缓存
+        clearCache();
+
+        // 达到if条件，说明文件夹已经存在，创建失败
+        if (createdFolder.getFileName() == null || "available".equals(createdFolder.getStatus())) {
+            log.error("create folder: {} fail, response: {}", folderUri, createFolderResponse);
+            throw new WebdavException(String.format("create folder %s fail", folderUri));
+        }
     }
 
     /**
@@ -122,7 +151,19 @@ public class AliyunDriveWebDavService {
      * @return 响应体
      */
     public Response download(String resourceUri, HttpServletRequest request, long size) {
-        return null;
+        AliyunDriveFile aliyunDriveFile = getAliyunDriveFile(resourceUri);
+        FileDownloadRequest downloadRequest = new FileDownloadRequest();
+        downloadRequest.setDriveId(aliyunDriveClient.getDriveId());
+        downloadRequest.setFileId(aliyunDriveFile.getFileId());
+        String responseString =
+                aliyunDriveClient.post("https://api.aliyundrive.com/v2/file/get_download_url", downloadRequest);
+
+        // 从返回体中解析出下载url
+        JSONObject response = JSONUtil.parseObj(responseString);
+        String downloadUrl = response.getStr("url");
+        log.info("download file: {}, url: {}", resourceUri, downloadUrl);
+
+        return aliyunDriveClient.download(downloadUrl, request, size);
     }
 
 
@@ -239,9 +280,13 @@ public class AliyunDriveWebDavService {
         uploadFinishRequest.setUploadId(uploadPreResponse.getUploadId());
 
         // 上传完成需要调用一下此接口
-        String completeResponse = aliyunDriveClient.post("https://api.aliyundrive.com/v2/file/complete", uploadFinishRequest);
+        String completeResponse =
+                aliyunDriveClient.post("https://api.aliyundrive.com/v2/file/complete", uploadFinishRequest);
         aliyunDriveFileVirtualService.remove(parent.getFileId(), uploadPreResponse.getFileId());
         log.info("finish upload file: {}, completeResponse: {}", resourceUri, completeResponse);
+
+        // 清理缓存，重新加载
+        clearCache();
     }
 
     /**
@@ -316,9 +361,9 @@ public class AliyunDriveWebDavService {
     /**
      * 删除指定资源
      *
-     * @param uri uri
+     * @param resourceUri 资源uri
      */
-    public void remove(String uri) {
+    public void remove(String resourceUri) {
 
     }
 
@@ -359,6 +404,10 @@ public class AliyunDriveWebDavService {
         aliyunDriveResourceInfo.setParentPath(parentPath);
         aliyunDriveResourceInfo.setName(name);
         return aliyunDriveResourceInfo;
+    }
+
+    private void clearCache() {
+        ALIYUN_DRIVE_FILE_CACHE.invalidateAll();
     }
 
 }
