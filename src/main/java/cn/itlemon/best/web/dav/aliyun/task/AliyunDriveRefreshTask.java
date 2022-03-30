@@ -3,7 +3,8 @@ package cn.itlemon.best.web.dav.aliyun.task;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import cn.itlemon.best.web.dav.aliyun.client.AliyunDriveClient;
+import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFile;
+import cn.itlemon.best.web.dav.aliyun.service.AliyunDriveWebDavService;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -15,10 +16,10 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 public class AliyunDriveRefreshTask {
 
-    private final AliyunDriveClient aliyunDriveClient;
+    private final AliyunDriveWebDavService aliyunDriveWebDavService;
 
-    public AliyunDriveRefreshTask(AliyunDriveClient aliyunDriveClient) {
-        this.aliyunDriveClient = aliyunDriveClient;
+    public AliyunDriveRefreshTask(AliyunDriveWebDavService aliyunDriveWebDavService) {
+        this.aliyunDriveWebDavService = aliyunDriveWebDavService;
     }
 
     /**
@@ -27,7 +28,13 @@ public class AliyunDriveRefreshTask {
     @Scheduled(initialDelay = 60000L, fixedDelay = 300000L)
     public void refresh() {
         log.info("AliyunDriveRefreshTask refresh token.");
-
+        try {
+            AliyunDriveFile root = aliyunDriveWebDavService.getAliyunDriveFile("/");
+            aliyunDriveWebDavService.getChildrenFiles(root.getFileId());
+        } catch (Throwable e) {
+            // nothing
+            log.error("AliyunDriveRefreshTask refresh fail.");
+        }
     }
 
 }

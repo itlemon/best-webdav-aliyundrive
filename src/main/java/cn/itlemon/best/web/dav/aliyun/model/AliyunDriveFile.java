@@ -87,6 +87,9 @@ public class AliyunDriveFile {
      */
     private String name;
 
+    @Alias("file_name")
+    private String fileName;
+
     /**
      * 父文件夹ID，根目录下的文件父目录ID是root
      */

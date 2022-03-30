@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -35,6 +36,7 @@ import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveResourceInfo;
 import cn.itlemon.best.web.dav.aliyun.model.request.FileCreateRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.FileDownloadRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.FileListRequest;
+import cn.itlemon.best.web.dav.aliyun.model.request.FileRemoveRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.RefreshUploadUrlRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.UploadFinishRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.UploadPreRequest;
@@ -63,7 +65,10 @@ public class AliyunDriveWebDavService {
      */
     private static final int CHUNK_SIZE = 10 * 1024 * 1024;
 
-    private AliyunDriveFile aliyunDriveFile;
+    /**
+     * 根目录信息
+     */
+    private AliyunDriveFile rootAliyunDriveFile;
 
     private final AliyunDriveClient aliyunDriveClient;
     private final AliyunDriveFileVirtualService aliyunDriveFileVirtualService;
@@ -96,6 +101,13 @@ public class AliyunDriveWebDavService {
     @PostConstruct
     public void init() {
         AliyunDriveWebDavStore.setAliyunDriveWebDavService(this);
+        // 虚拟出根目录信息
+        rootAliyunDriveFile = new AliyunDriveFile();
+        rootAliyunDriveFile.setName("/");
+        rootAliyunDriveFile.setFileId("root");
+        rootAliyunDriveFile.setCreateAt(new Date());
+        rootAliyunDriveFile.setUpdatedAt(new Date());
+        rootAliyunDriveFile.setType(FileType.FOLDER.getType());
     }
 
 
@@ -292,10 +304,36 @@ public class AliyunDriveWebDavService {
     /**
      * 获取阿里云网盘文件夹或者文件信息
      *
-     * @param folderUri uri
+     * @param resourceUri 资源uri
      * @return 获取阿里云网盘文件夹或者文件信息
      */
-    public AliyunDriveFile getAliyunDriveFile(String folderUri) {
+    public AliyunDriveFile getAliyunDriveFile(String resourceUri) {
+        resourceUri = checkResourceUri(resourceUri);
+
+        if (StrUtil.isBlank(resourceUri)) {
+            resourceUri = ROOT_PATH;
+        }
+        if (resourceUri.equals(ROOT_PATH)) {
+            // 获取根目录信息
+            return rootAliyunDriveFile;
+        }
+
+        // 非根目录
+        AliyunDriveResourceInfo resourceInfo = getResourceInfo(resourceUri);
+        AliyunDriveFile parentFile = getAliyunDriveFile(resourceInfo.getParentPath());
+        if (parentFile == null) {
+            return null;
+        }
+        return getNodeFileByParentFileId(parentFile.getFileId(), resourceInfo.getName());
+    }
+
+    private AliyunDriveFile getNodeFileByParentFileId(String parentFileId, String name) {
+        Set<AliyunDriveFile> aliyunDriveFileSet = getChildrenFiles(parentFileId);
+        for (AliyunDriveFile file : aliyunDriveFileSet) {
+            if (file.getName().equals(name)) {
+                return file;
+            }
+        }
         return null;
     }
 
@@ -364,7 +402,18 @@ public class AliyunDriveWebDavService {
      * @param resourceUri 资源uri
      */
     public void remove(String resourceUri) {
+        resourceUri = checkResourceUri(resourceUri);
+        AliyunDriveFile aliyunDriveFile = getAliyunDriveFile(resourceUri);
+        if (aliyunDriveFile == null) {
+            return;
+        }
 
+        FileRemoveRequest removeRequest = new FileRemoveRequest();
+        removeRequest.setDriveId(aliyunDriveClient.getDriveId());
+        removeRequest.setFileId(aliyunDriveFile.getFileId());
+
+        aliyunDriveClient.post("https://api.aliyundrive.com/v2/recyclebin/trash", removeRequest);
+        clearCache();
     }
 
     /**
