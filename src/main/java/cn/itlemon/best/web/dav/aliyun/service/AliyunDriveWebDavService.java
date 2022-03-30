@@ -28,7 +28,13 @@ import cn.itlemon.best.web.dav.aliyun.client.AliyunDriveClient;
 import cn.itlemon.best.web.dav.aliyun.constant.AliyunDriveConstant;
 import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFile;
 import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFileListResult;
+import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFilePartInfo;
+import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveResourceInfo;
 import cn.itlemon.best.web.dav.aliyun.model.request.FileListRequest;
+import cn.itlemon.best.web.dav.aliyun.model.request.RefreshUploadUrlRequest;
+import cn.itlemon.best.web.dav.aliyun.model.request.UploadFinishRequest;
+import cn.itlemon.best.web.dav.aliyun.model.request.UploadPreRequest;
+import cn.itlemon.best.web.dav.aliyun.model.response.UploadPreResponse;
 import cn.itlemon.best.web.dav.aliyun.store.AliyunDriveWebDavStore;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.webdav.exceptions.WebdavException;
@@ -119,102 +125,123 @@ public class AliyunDriveWebDavService {
         return null;
     }
 
+
     public void uploadPre(String resourceUri, long contentLength, InputStream content) {
         resourceUri = checkResourceUri(resourceUri);
-        PathInfo pathInfo = getPathInfo(resourceUri);
-        TFile parent = getTFileByPath(pathInfo.getParentPath());
+        AliyunDriveResourceInfo resourceInfo = getResourceInfo(resourceUri);
+        AliyunDriveFile parent = getAliyunDriveFile(resourceInfo.getParentPath());
         if (parent == null) {
             return;
         }
-        // 如果已存在，先删除
-        TFile tfile = getTFileByPath(resourceUri);
-        if (tfile != null) {
-            if (tfile.getSize() == size) {
-                //如果文件大小一样，则不再上传
+
+        AliyunDriveFile resource = getAliyunDriveFile(resourceUri);
+        if (resource != null) {
+            if (resource.getSize() == contentLength) {
+                // 这里暂时认为文件大小一致的是同一个文件，这里不再上传
+                log.info("resource: {} already exist.", resource);
                 return;
             }
-            remove(path);
+            // 否则先删除文件，再进行上传
+            remove(resourceUri);
         }
 
-
-        int chunkCount = (int) Math.ceil(((double) size) / chunkSize); // 进1法
+        int chunkCount = (int) Math.ceil(((double) contentLength) / CHUNK_SIZE);
 
         UploadPreRequest uploadPreRequest = new UploadPreRequest();
-        //        uploadPreRequest.setContent_hash(UUID.randomUUID().toString());
-        uploadPreRequest.setDrive_id(client.getDriveId());
-        uploadPreRequest.setName(pathInfo.getName());
-        uploadPreRequest.setParent_file_id(parent.getFile_id());
-        uploadPreRequest.setSize(size);
-        List<UploadPreRequest.PartInfo> part_info_list = new ArrayList<>();
+        uploadPreRequest.setDriveId(aliyunDriveClient.getDriveId());
+        uploadPreRequest.setName(resourceInfo.getName());
+        uploadPreRequest.setParentFileId(parent.getFileId());
+        uploadPreRequest.setSize(contentLength);
+        List<AliyunDriveFilePartInfo> requestPartInfoList = new ArrayList<>();
         for (int i = 0; i < chunkCount; i++) {
-            UploadPreRequest.PartInfo partInfo = new UploadPreRequest.PartInfo();
-            partInfo.setPart_number(i + 1);
-            part_info_list.add(partInfo);
+            AliyunDriveFilePartInfo partInfo = new AliyunDriveFilePartInfo();
+            partInfo.setPartNumber(i + 1);
+            requestPartInfoList.add(partInfo);
         }
-        uploadPreRequest.setPart_info_list(part_info_list);
+        uploadPreRequest.setPartInfoList(requestPartInfoList);
 
-        LOGGER.info("开始上传文件，文件名：{}，总大小：{}, 文件块数量：{}", resourceUri, size, chunkCount);
+        log.info("start to upload file, file name: {}, size: {}, part number of file: {}", uploadPreRequest.getName(),
+                contentLength, chunkCount);
 
-        String json = client.post("/file/create_with_proof", uploadPreRequest);
-        UploadPreResult uploadPreResult = JsonUtil.readValue(json, UploadPreResult.class);
-        List<UploadPreRequest.PartInfo> partInfoList = uploadPreResult.getPart_info_list();
-        if (partInfoList != null) {
-            if (size > 0) {
-                virtualTFileService.createTFile(parent.getFile_id(), uploadPreResult);
+        // 未设置content_hash和content_hash_name参数的时候，请求该API，将返回可以用于上传的url列表
+        String response = aliyunDriveClient.post("https://api.aliyundrive.com/adrive/v2/file/createWithFolders",
+                uploadPreRequest);
+        UploadPreResponse uploadPreResponse = JSONUtil.toBean(response, UploadPreResponse.class);
+
+        List<AliyunDriveFilePartInfo> responsePartInfoList = uploadPreRequest.getPartInfoList();
+        if (responsePartInfoList != null) {
+            if (contentLength > 0) {
+                aliyunDriveFileVirtualService.createAliyunDriveFile(parent.getFileId(), uploadPreResponse);
             }
-            LOGGER.info("文件预处理成功，开始上传。文件名：{}，上传URL数量：{}", resourceUri, partInfoList.size());
+            log.info("pre upload process success, resource uri: {}, upload url size: {}", resourceUri,
+                    responsePartInfoList.size());
 
-            byte[] buffer = new byte[chunkSize];
-            for (int i = 0; i < partInfoList.size(); i++) {
-                UploadPreRequest.PartInfo partInfo = partInfoList.get(i);
+            byte[] buffer = new byte[CHUNK_SIZE];
+            for (int i = 0; i < responsePartInfoList.size(); i++) {
+                AliyunDriveFilePartInfo partInfo = responsePartInfoList.get(i);
 
+                // 返回的url类似：https://bj29.cn-beijing.data.alicloudccp.com/8M6tfnwf%2F1917514%2F62443df02bc12fad773045609e965e7b767b1e68%2F62443df0c10354348e174d408092573451ea6c4b?partNumber=6&uploadId=004BC5A6B969423EAA1DAF12263D8FB3&x-oss-access-key-id=LTAIsE5mAn2F493Q&x-oss-expires=1648643073&x-oss-signature=9oYcAI8DB%2FQpIFDeu214gmbiipxnPrH3%2FcfqhdDRZ3w%3D&x-oss-signature-version=OSS2
+                // 获取返回的URL中的过期时间参数
                 long expires = Long.parseLong(
-                        Objects.requireNonNull(Objects.requireNonNull(HttpUrl.parse(partInfo.getUpload_url()))
+                        Objects.requireNonNull(Objects.requireNonNull(HttpUrl.parse(partInfo.getUploadUrl()))
                                 .queryParameter("x-oss-expires")));
+
+                // 确保url没有过期，否则将无法上传
                 if (System.currentTimeMillis() / 1000 + 10 >= expires) {
                     // 已过期，重新置换UploadUrl
                     RefreshUploadUrlRequest refreshUploadUrlRequest = new RefreshUploadUrlRequest();
-                    refreshUploadUrlRequest.setDrive_id(client.getDriveId());
-                    refreshUploadUrlRequest.setUpload_id(uploadPreResult.getUpload_id());
-                    refreshUploadUrlRequest.setFile_id(uploadPreResult.getFile_id());
-                    refreshUploadUrlRequest.setPart_info_list(part_info_list);
-                    String refreshJson = client.post("/file/get_upload_url", refreshUploadUrlRequest);
-                    UploadPreResult refreshResult = JsonUtil.readValue(refreshJson, UploadPreResult.class);
-                    for (int j = i; j < partInfoList.size(); j++) {
-                        UploadPreRequest.PartInfo oldInfo = partInfoList.get(j);
-                        UploadPreRequest.PartInfo newInfo = refreshResult.getPart_info_list().stream()
-                                .filter(p -> p.getPart_number().equals(oldInfo.getPart_number())).findAny()
+                    refreshUploadUrlRequest.setDriveId(aliyunDriveClient.getDriveId());
+                    refreshUploadUrlRequest.setUploadId(uploadPreResponse.getUploadId());
+                    refreshUploadUrlRequest.setFileId(uploadPreResponse.getFileId());
+                    refreshUploadUrlRequest.setPartInfoList(requestPartInfoList);
+                    String refreshResult =
+                            aliyunDriveClient.post("https://api.aliyundrive.com/v2/file/get_upload_url",
+                                    refreshUploadUrlRequest);
+                    UploadPreResponse refreshResponse = JSONUtil.toBean(refreshResult, UploadPreResponse.class);
+
+                    // 获取到新的上传链接列表
+                    for (int j = i; j < responsePartInfoList.size(); j++) {
+                        AliyunDriveFilePartInfo oldPartInfo = responsePartInfoList.get(j);
+                        AliyunDriveFilePartInfo newPartInfo = refreshResponse.getPartInfoList().stream()
+                                .filter(item -> item.getPartNumber().equals(oldPartInfo.getPartNumber())).findAny()
                                 .orElseThrow(NullPointerException::new);
-                        oldInfo.setUpload_url(newInfo.getUpload_url());
+                        // 将新的链接设置到老的partInfo中
+                        oldPartInfo.setUploadUrl(newPartInfo.getUploadUrl());
                     }
                 }
 
                 try {
-                    int read = IOUtils.read(inputStream, buffer, 0, buffer.length);
+                    int read = IOUtils.read(content, buffer, 0, buffer.length);
                     if (read == -1) {
-                        LOGGER.info("文件上传结束。文件名：{}，当前进度：{}/{}", resourceUri, (i + 1), partInfoList.size());
+                        log.info("finish upload file: {}, current speed of progress： {}/{}", resourceUri, (i + 1),
+                                responsePartInfoList.size());
                         return;
                     }
-                    client.upload(partInfo.getUpload_url(), buffer, 0, read);
-                    virtualTFileService.updateLength(parent.getFile_id(), uploadPreResult.getFile_id(), buffer.length);
-                    LOGGER.info("文件正在上传。文件名：{}，当前进度：{}/{}", path, (i + 1), partInfoList.size());
+                    aliyunDriveClient.upload(partInfo.getUploadUrl(), buffer, 0, read);
+
+                    // 更新虚拟文件大小
+                    aliyunDriveFileVirtualService.updateLength(parent.getFileId(), uploadPreResponse.getFileId(),
+                            buffer.length);
+
+                    log.info("file is uploading, file name: {}, current speed of progress： {}/{}", resourceUri, (i + 1),
+                            responsePartInfoList.size());
                 } catch (IOException e) {
-                    virtualTFileService.remove(parent.getFile_id(), uploadPreResult.getFile_id());
+                    log.error("upload file got error.", e);
+                    aliyunDriveFileVirtualService.remove(parent.getFileId(), uploadPreResponse.getFileId());
                     throw new WebdavException(e);
                 }
             }
         }
 
+        UploadFinishRequest uploadFinishRequest = new UploadFinishRequest();
+        uploadFinishRequest.setFileId(uploadPreResponse.getFileId());
+        uploadFinishRequest.setDriveId(aliyunDriveClient.getDriveId());
+        uploadFinishRequest.setUploadId(uploadPreResponse.getUploadId());
 
-        UploadFinalRequest uploadFinalRequest = new UploadFinalRequest();
-        uploadFinalRequest.setFile_id(uploadPreResult.getFile_id());
-        uploadFinalRequest.setDrive_id(client.getDriveId());
-        uploadFinalRequest.setUpload_id(uploadPreResult.getUpload_id());
-
-        client.post("/file/complete", uploadFinalRequest);
-        virtualTFileService.remove(parent.getFile_id(), uploadPreResult.getFile_id());
-        LOGGER.info("文件上传成功。文件名：{}", path);
-        clearCache();
+        // 上传完成需要调用一下此接口
+        String completeResponse = aliyunDriveClient.post("https://api.aliyundrive.com/v2/file/complete", uploadFinishRequest);
+        aliyunDriveFileVirtualService.remove(parent.getFileId(), uploadPreResponse.getFileId());
+        log.info("finish upload file: {}, completeResponse: {}", resourceUri, completeResponse);
     }
 
     /**
@@ -303,9 +330,35 @@ public class AliyunDriveWebDavService {
      */
     private String checkResourceUri(String resourceUri) {
         resourceUri = resourceUri.replaceAll("//", "/");
-        if (resourceUri.endsWith("/")) {
+        if (!ROOT_PATH.equals(resourceUri) && resourceUri.endsWith("/")) {
             resourceUri = resourceUri.substring(0, resourceUri.length() - 1);
         }
         return resourceUri;
     }
+
+    /**
+     * 获取阿里云资源信息
+     *
+     * @param resourceUri 资源uri
+     * @return 资源对象
+     */
+    private AliyunDriveResourceInfo getResourceInfo(String resourceUri) {
+        resourceUri = checkResourceUri(resourceUri);
+        AliyunDriveResourceInfo aliyunDriveResourceInfo = new AliyunDriveResourceInfo();
+        if (ROOT_PATH.equals(resourceUri)) {
+            // rootPath
+            aliyunDriveResourceInfo.setPath(resourceUri);
+            aliyunDriveResourceInfo.setName(resourceUri);
+            return aliyunDriveResourceInfo;
+        }
+        // 非rootPath
+        int index = resourceUri.lastIndexOf("/");
+        String parentPath = resourceUri.substring(0, index + 1);
+        String name = resourceUri.substring(index + 1);
+        aliyunDriveResourceInfo.setPath(resourceUri);
+        aliyunDriveResourceInfo.setParentPath(parentPath);
+        aliyunDriveResourceInfo.setName(name);
+        return aliyunDriveResourceInfo;
+    }
+
 }
