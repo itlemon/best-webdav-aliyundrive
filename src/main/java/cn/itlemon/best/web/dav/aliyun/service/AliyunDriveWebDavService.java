@@ -41,7 +41,6 @@ import cn.itlemon.best.web.dav.aliyun.model.request.RefreshUploadUrlRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.UploadFinishRequest;
 import cn.itlemon.best.web.dav.aliyun.model.request.UploadPreRequest;
 import cn.itlemon.best.web.dav.aliyun.model.response.UploadPreResponse;
-import cn.itlemon.best.web.dav.aliyun.store.AliyunDriveWebDavStore;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.webdav.exceptions.WebdavException;
 import okhttp3.HttpUrl;
@@ -100,7 +99,6 @@ public class AliyunDriveWebDavService {
 
     @PostConstruct
     public void init() {
-//        AliyunDriveWebDavStore.setAliyunDriveWebDavService(this);
         // 虚拟出根目录信息
         rootAliyunDriveFile = new AliyunDriveFile();
         rootAliyunDriveFile.setName("/");

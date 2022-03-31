@@ -39,6 +39,11 @@ import okhttp3.Response;
 public class AliyunDriveWebDavStore implements IWebdavStore {
 
     /**
+     * 这里将Spring Bean AliyunDriveWebDavService 设置为静态变量，方便全局使用
+     */
+    private static AliyunDriveWebDavService aliyunDriveWebDavService;
+
+    /**
      * 该构造方法是 {@link WebdavServlet#constructStore(String clazzName, File root)} 在反射构建AliyunDriveWebDavStore对象的时候用的构造方法
      *
      * @param file root File
@@ -46,21 +51,7 @@ public class AliyunDriveWebDavStore implements IWebdavStore {
     public AliyunDriveWebDavStore(File file) {
         log.info("WebdavServlet.constructStore() is init AliyunDriveWebDavStore.");
         AliyunDriveWebDavStore.aliyunDriveWebDavService = SpringBeanUtils.getBean(AliyunDriveWebDavService.class);
-        log.info("AliyunDriveWebDavStore.aliyunDriveWebDavService={}", aliyunDriveWebDavService);
-    }
-
-    /**
-     * 这里将Spring Bean AliyunDriveWebDavService 设置为静态变量，方便全局使用
-     */
-    private static AliyunDriveWebDavService aliyunDriveWebDavService;
-
-    /**
-     * 将初始化好的aliyunDriveWebDavService设置到全局变量中，该方法在Spring容器初始化AliyunDriveWebDavService后调用一次
-     *
-     * @param aliyunDriveWebDavService aliyunDriveWebDavService对象
-     */
-    public static void setAliyunDriveWebDavService(AliyunDriveWebDavService aliyunDriveWebDavService) {
-        AliyunDriveWebDavStore.aliyunDriveWebDavService = aliyunDriveWebDavService;
+        log.info("AliyunDriveWebDavStore.aliyunDriveWebDavService={}", AliyunDriveWebDavStore.aliyunDriveWebDavService);
     }
 
     @Override
