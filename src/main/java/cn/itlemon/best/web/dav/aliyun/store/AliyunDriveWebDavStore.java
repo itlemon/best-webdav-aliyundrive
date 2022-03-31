@@ -1,5 +1,6 @@
 package cn.itlemon.best.web.dav.aliyun.store;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.Principal;
@@ -23,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.webdav.ITransaction;
 import net.sf.webdav.IWebdavStore;
 import net.sf.webdav.StoredObject;
+import net.sf.webdav.WebdavServlet;
 import net.sf.webdav.exceptions.WebdavException;
 import okhttp3.Response;
 
@@ -34,6 +36,15 @@ import okhttp3.Response;
  */
 @Slf4j
 public class AliyunDriveWebDavStore implements IWebdavStore {
+
+    /**
+     * 该构造方法是 {@link WebdavServlet#constructStore(String clazzName, File root)} 在反射构建AliyunDriveWebDavStore对象的时候用的构造方法
+     *
+     * @param file root File
+     */
+    public AliyunDriveWebDavStore(File file) {
+        log.info("WebdavServlet.constructStore() is init AliyunDriveWebDavStore.");
+    }
 
     /**
      * 这里将Spring Bean AliyunDriveWebDavService 设置为静态变量，方便全局使用
@@ -180,7 +191,8 @@ public class AliyunDriveWebDavStore implements IWebdavStore {
 
     @Override
     public StoredObject getStoredObject(ITransaction transaction, String uri) {
-        log.info("AliyunDriveWebDavStore.getStoredObject({})", uri);
+        log.info("AliyunDriveWebDavStore.getStoredObject({}), aliyunDriveWebDavService: {}", uri,
+                aliyunDriveWebDavService);
         AliyunDriveFile aliyunDriveFile = aliyunDriveWebDavService.getAliyunDriveFile(uri);
         if (aliyunDriveFile != null) {
             StoredObject so = new StoredObject();

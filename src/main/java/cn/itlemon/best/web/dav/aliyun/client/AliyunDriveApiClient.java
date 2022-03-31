@@ -95,13 +95,14 @@ class AliyunDriveApiClient {
                                                 readRefreshToken()));
                             }
                             // 获取accessToken
+                            log.info("AliyunDriveApiClient get aliyunDriveUserInfo: {}", aliyunDriveUserInfo);
                             String accessToken = AliyunDriveApiClient.toString(
                                     JSONUtil.parseObj(aliyunDriveUserInfo).get(AliyunDriveConstant.ACCESS_TOKEN_KEY));
                             String refreshToken = AliyunDriveApiClient.toString(
                                     JSONUtil.parseObj(aliyunDriveUserInfo).get(AliyunDriveConstant.REFRESH_TOKEN_KEY));
-                            Preconditions.checkArgument(StrUtil.isBlank(accessToken),
+                            Preconditions.checkArgument(StrUtil.isNotBlank(accessToken),
                                     "AliyunDriveApiClient getAccessToken fail.");
-                            Preconditions.checkArgument(StrUtil.isBlank(refreshToken),
+                            Preconditions.checkArgument(StrUtil.isNotBlank(refreshToken),
                                     "AliyunDriveApiClient getRefreshToken fail.");
 
                             // 更新refreshToken
@@ -208,23 +209,29 @@ class AliyunDriveApiClient {
      * @return 响应体
      */
     public String post(String url, Object body) {
+        // 获取完整url
+        url = wrapUrl(url);
         String bodyAsJson = JSONUtil.toJsonStr(body);
         Request request = new Request.Builder()
                 .post(RequestBody.create(MediaType.parse(AliyunDriveConstant.DEFAULT_CONTENT_TYPE), bodyAsJson))
-                .url(wrapUrl(url)).build();
+                .url(url).build();
         try (Response response = httpClient.newCall(request).execute()) {
+            // 这里首先获取responseBody
+            assert response.body() != null;
+            String responseBodyString = response.body().string();
+
             if (LOG_RATE_LIMITER.tryAcquire()) {
-                log.info("AliyunDriveApiClient call post url: {}, response body: {}, response code: {}", url,
-                        bodyAsJson, response.code());
+                log.info("AliyunDriveApiClient call post url: {}, request body: {}, response code: {}, response body: {}", url,
+                        bodyAsJson, response.code(), responseBodyString);
             }
             if (!response.isSuccessful()) {
-                log.error("AliyunDriveApiClient call post fail，url: {}, response body: {}, response code: {}", url,
-                        response.body(), response.code());
+                log.error("AliyunDriveApiClient call post fail，url: {}, request body: {}, response code: {}, response body: {}", url,
+                        bodyAsJson, response.code(), responseBodyString);
                 throw new WebdavException("AliyunDriveApiClient call post fail: " + url);
             }
-            return toString(response.body());
+            return responseBodyString;
         } catch (Exception e) {
-            log.error(e.getMessage());
+            log.error("AliyunDriveApiClient post get error. " + e.getMessage());
             throw new WebdavException(e);
         }
     }

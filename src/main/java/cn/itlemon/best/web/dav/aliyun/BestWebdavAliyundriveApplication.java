@@ -1,5 +1,6 @@
 package cn.itlemon.best.web.dav.aliyun;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -14,6 +15,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import cn.itlemon.best.web.dav.aliyun.config.AliyunDriveConfig;
 import cn.itlemon.best.web.dav.aliyun.filter.GlobalErrorFilter;
 import cn.itlemon.best.web.dav.aliyun.store.AliyunDriveWebDavStore;
+import lombok.extern.slf4j.Slf4j;
 import net.sf.webdav.WebdavServlet;
 
 /**
@@ -22,13 +24,17 @@ import net.sf.webdav.WebdavServlet;
  * @author itlemon <lemon_jiang@aliyun.com>
  * Created on 2022-03-20
  */
+@Slf4j
 @SpringBootApplication
 @EnableScheduling
 @EnableConfigurationProperties(AliyunDriveConfig.class)
 public class BestWebdavAliyundriveApplication {
 
+
     public static void main(String[] args) {
+        log.info("BestWebdavAliyundriveApplication start args: {}", Arrays.toString(args));
         SpringApplication.run(BestWebdavAliyundriveApplication.class, args);
+        log.info("BestWebdavAliyundriveApplication finished start.");
     }
 
     @Bean

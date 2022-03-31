@@ -44,7 +44,7 @@ public class FileListRequest {
     private int limit = 100;
 
     @Alias("order_by")
-    private String OrderBy = "update_at";
+    private String OrderBy = "updated_at";
 
     @Alias("order_direction")
     private String orderDirection = "DESC";
