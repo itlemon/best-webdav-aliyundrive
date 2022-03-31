@@ -100,7 +100,7 @@ public class AliyunDriveWebDavService {
 
     @PostConstruct
     public void init() {
-        AliyunDriveWebDavStore.setAliyunDriveWebDavService(this);
+//        AliyunDriveWebDavStore.setAliyunDriveWebDavService(this);
         // 虚拟出根目录信息
         rootAliyunDriveFile = new AliyunDriveFile();
         rootAliyunDriveFile.setName("/");

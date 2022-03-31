@@ -20,6 +20,7 @@ import cn.itlemon.best.web.dav.aliyun.constant.FileType;
 import cn.itlemon.best.web.dav.aliyun.model.AliyunDriveFile;
 import cn.itlemon.best.web.dav.aliyun.service.AliyunDriveWebDavService;
 import cn.itlemon.best.web.dav.aliyun.transaction.Transaction;
+import cn.itlemon.best.web.dav.aliyun.utils.SpringBeanUtils;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.webdav.ITransaction;
 import net.sf.webdav.IWebdavStore;
@@ -44,6 +45,8 @@ public class AliyunDriveWebDavStore implements IWebdavStore {
      */
     public AliyunDriveWebDavStore(File file) {
         log.info("WebdavServlet.constructStore() is init AliyunDriveWebDavStore.");
+        AliyunDriveWebDavStore.aliyunDriveWebDavService = SpringBeanUtils.getBean(AliyunDriveWebDavService.class);
+        log.info("AliyunDriveWebDavStore.aliyunDriveWebDavService={}", aliyunDriveWebDavService);
     }
 
     /**
