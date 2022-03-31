@@ -51,7 +51,7 @@ public class AliyunDriveWebDavAuthTomcatConfig implements
                 @Override
                 protected Principal getPrincipal(String username) {
                     return new GenericPrincipal(username, aliyunDriveConfig.getAuth().getPassword(),
-                            Collections.singletonList("**"));
+                            Collections.singletonList("*"));
                 }
             };
 

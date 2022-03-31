@@ -185,8 +185,7 @@ public class AliyunDriveWebDavStore implements IWebdavStore {
 
     @Override
     public StoredObject getStoredObject(ITransaction transaction, String uri) {
-        log.info("AliyunDriveWebDavStore.getStoredObject({}), aliyunDriveWebDavService: {}", uri,
-                aliyunDriveWebDavService);
+        log.info("AliyunDriveWebDavStore.getStoredObject({}).", uri);
         AliyunDriveFile aliyunDriveFile = aliyunDriveWebDavService.getAliyunDriveFile(uri);
         if (aliyunDriveFile != null) {
             StoredObject so = new StoredObject();

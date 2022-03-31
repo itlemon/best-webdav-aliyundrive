@@ -33,7 +33,7 @@ public class AliyunDriveFileVirtualService {
     public List<AliyunDriveFile> list(String fileId) {
         Map<String, AliyunDriveFile> aliyunDriveFileMap = virtualAliyunDriveFileMap.get(fileId);
         if (aliyunDriveFileMap == null) {
-            log.warn("parent file id: {} not exist child file.", fileId);
+            log.info("parent file id: {} not exist virtual child file.", fileId);
             return Collections.emptyList();
         }
         return new ArrayList<>(aliyunDriveFileMap.values());
